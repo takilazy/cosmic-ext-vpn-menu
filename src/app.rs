@@ -271,8 +271,8 @@ pub enum Message {
     EditorSelectType(String, String),
     /// The WireGuard type was chosen.
     EditorSelectWireGuard,
-    /// Editor: WireGuard private key changed.
-    EditorWgPrivateKey(String),
+    /// Editor: WireGuard private key changed (redacted in Debug).
+    EditorWgPrivateKey(Secret),
     /// Editor: WireGuard address changed.
     EditorWgAddress(String),
     /// Editor: WireGuard DNS servers changed.
@@ -289,8 +289,8 @@ pub enum Message {
     EditorWgPeerEndpoint(usize, String),
     /// Editor: peer `index` allowed IPs changed.
     EditorWgAllowedIps(usize, String),
-    /// Editor: peer `index` pre-shared key changed.
-    EditorWgPeerPsk(usize, String),
+    /// Editor: peer `index` pre-shared key changed (redacted in Debug).
+    EditorWgPeerPsk(usize, Secret),
     /// Editor: peer `index` persistent keepalive changed.
     EditorWgPeerKeepalive(usize, String),
     /// A saved WireGuard tunnel's editable fields were loaded (or failed).
@@ -1270,6 +1270,31 @@ impl AppModel {
                             .width(Length::Fill),
                     )
             };
+            // Masked variants for secret keys (private key, pre-shared key).
+            let secret_field = |label: String, value: String, on_input: fn(String) -> Message| {
+                widget::Column::new()
+                    .spacing(spacing.space_xxs)
+                    .push(widget::text(label))
+                    .push(
+                        widget::secure_input("", value, None, true)
+                            .on_input(on_input)
+                            .width(Length::Fill),
+                    )
+            };
+            let secret_peer_field =
+                |label: String,
+                 value: String,
+                 index: usize,
+                 on_input: fn(usize, String) -> Message| {
+                    widget::Column::new()
+                        .spacing(spacing.space_xxs)
+                        .push(widget::text(label))
+                        .push(
+                            widget::secure_input("", value, None, true)
+                                .on_input(move |v| on_input(index, v))
+                                .width(Length::Fill),
+                        )
+                };
             let title = if editor.edit_uuid.is_some() {
                 fl!("edit-vpn", kind = "WireGuard".to_string())
             } else {
@@ -1288,10 +1313,10 @@ impl AppModel {
                     fl!("autoconnect"),
                     widget::toggler(editor.autoconnect).on_toggle(Message::EditorAutoconnect),
                 ))
-                .push(field(
+                .push(secret_field(
                     fl!("wg-private-key"),
                     editor.wg_private_key.clone(),
-                    Message::EditorWgPrivateKey,
+                    |v| Message::EditorWgPrivateKey(Secret(v)),
                 ))
                 .push(field(
                     fl!("wg-address"),
@@ -1344,11 +1369,11 @@ impl AppModel {
                         index,
                         Message::EditorWgAllowedIps,
                     ))
-                    .push(peer_field(
+                    .push(secret_peer_field(
                         fl!("wg-preshared-key"),
                         peer.preshared_key.clone(),
                         index,
-                        Message::EditorWgPeerPsk,
+                        |i, v| Message::EditorWgPeerPsk(i, Secret(v)),
                     ))
                     .push(peer_field(
                         fl!("wg-keepalive"),
@@ -1450,15 +1475,18 @@ impl AppModel {
             // NM's numeric flags; closed-enum keys get a raw-value dropdown; anything
             // else (or an off-list value from an existing profile) stays free-form.
             let value_element: Element<'_, Message> = if key.ends_with("-flags") {
-                // NM secret flags: 0 = stored, 1 = ask every time, 2 = not required.
+                // NMSettingSecretFlags is a bitfield: 0 = NONE (stored), 1 =
+                // AGENT_OWNED (also stored), 2 = NOT_SAVED (ask every time), 4 =
+                // NOT_REQUIRED. Map the three user choices to 0 / 2 / 4.
+                const FLAG_VALUES: [&str; 3] = ["0", "2", "4"];
                 let labels = [fl!("secret-store"), fl!("secret-ask"), fl!("secret-none")];
                 let selected = match value.trim() {
-                    "1" => Some(1),
-                    "2" => Some(2),
-                    _ => Some(0),
+                    "2" => Some(1),
+                    "4" => Some(2),
+                    _ => Some(0), // 0 (NONE) and 1 (AGENT_OWNED) are both "stored"
                 };
                 widget::dropdown(labels.to_vec(), selected, move |i| {
-                    Message::EditorDataValue(index, i.to_string())
+                    Message::EditorDataValue(index, FLAG_VALUES[i].to_string())
                 })
                 .width(Length::Fill)
                 .into()
@@ -1939,7 +1967,7 @@ impl cosmic::Application for AppModel {
             },
             Message::EditorWgPrivateKey(value) => {
                 if let Some(editor) = &mut self.editor {
-                    editor.wg_private_key = value;
+                    editor.wg_private_key = value.0;
                 }
             }
             Message::EditorWgAddress(value) => {
@@ -1995,7 +2023,7 @@ impl cosmic::Application for AppModel {
                 if let Some(editor) = &mut self.editor
                     && let Some(peer) = editor.wg_peers.get_mut(index)
                 {
-                    peer.preshared_key = value;
+                    peer.preshared_key = value.0;
                 }
             }
             Message::EditorWgPeerKeepalive(index, value) => {

@@ -377,12 +377,22 @@ impl VpnBackend for NmBackend {
 
         let connection = raw.get("connection");
         let wg = raw.get("wireguard");
-        let peers = wg.map(owned_wg_peers).unwrap_or_default();
+        let mut peers = wg.map(owned_wg_peers).unwrap_or_default();
         // Address lives in whichever family is `manual`; join both for display.
         let mut addresses = raw.get("ipv4").map(owned_addresses).unwrap_or_default();
         addresses.extend(raw.get("ipv6").map(owned_addresses).unwrap_or_default());
         let mut dns = raw.get("ipv4").map(owned_dns_v4).unwrap_or_default();
         dns.extend(raw.get("ipv6").map(owned_dns_v6).unwrap_or_default());
+
+        // `GetSettings` (above) strips secrets, so the private key and peer
+        // pre-shared keys come back blank. Fetch them via `GetSecrets` so the
+        // editor round-trips without wiping them on save. Best-effort.
+        let (private_key, psks) = wireguard_secrets(uuid).await;
+        for (peer, psk) in peers.iter_mut().zip(psks) {
+            if let Some(psk) = psk {
+                peer.preshared_key = psk;
+            }
+        }
 
         Ok(model::WgEdit {
             name: connection
@@ -391,8 +401,8 @@ impl VpnBackend for NmBackend {
             autoconnect: connection
                 .and_then(|c| owned_bool(c, "autoconnect"))
                 .unwrap_or(false),
-            private_key: wg
-                .and_then(|s| owned_str(s, "private-key"))
+            private_key: private_key
+                .or_else(|| wg.and_then(|s| owned_str(s, "private-key")))
                 .unwrap_or_default(),
             address: addresses.join(" "),
             dns: dns.join(" "),
@@ -691,6 +701,61 @@ fn build_wireguard_settings(
     builder
         .build()
         .map_err(|e| BackendError(format!("building WireGuard connection: {e}")))
+}
+
+/// Fetch WireGuard secrets (interface private key + per-peer pre-shared keys) for a
+/// saved connection via NM's `GetSecrets`. `GetSettings` strips secret values, so
+/// without this the editor blanks them and a save would wipe them. Best-effort:
+/// returns `(None, [])` if the path/secrets are unavailable.
+async fn wireguard_secrets(uuid: &str) -> (Option<String>, Vec<Option<String>>) {
+    use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+    type Secrets = HashMap<String, HashMap<String, OwnedValue>>;
+
+    let empty = (None, Vec::new());
+    let Ok(conn) = zbus::Connection::system().await else {
+        return empty;
+    };
+    let Ok(settings) = zbus::Proxy::new(
+        &conn,
+        "org.freedesktop.NetworkManager",
+        "/org/freedesktop/NetworkManager/Settings",
+        "org.freedesktop.NetworkManager.Settings",
+    )
+    .await
+    else {
+        return empty;
+    };
+    let Ok(path) = settings
+        .call::<_, _, OwnedObjectPath>("GetConnectionByUuid", &(uuid))
+        .await
+    else {
+        return empty;
+    };
+    let Ok(cproxy) = zbus::Proxy::new(
+        &conn,
+        "org.freedesktop.NetworkManager",
+        path,
+        "org.freedesktop.NetworkManager.Settings.Connection",
+    )
+    .await
+    else {
+        return empty;
+    };
+    let Ok(secrets) = cproxy
+        .call::<_, _, Secrets>("GetSecrets", &("wireguard"))
+        .await
+    else {
+        return empty;
+    };
+    let Some(wg) = secrets.get("wireguard") else {
+        return empty;
+    };
+    let private_key = owned_str(wg, "private-key").filter(|s| !s.is_empty());
+    let psks: Vec<Option<String>> = owned_wg_peers(wg)
+        .into_iter()
+        .map(|p| (!p.preshared_key.is_empty()).then_some(p.preshared_key))
+        .collect();
+    (private_key, psks)
 }
 
 /// Decode a `wireguard.peers` (`aa{sv}`) field into editor peer rows.
