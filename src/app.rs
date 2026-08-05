@@ -494,6 +494,96 @@ fn pick_data_file(index: usize) -> Task<cosmic::Action<Message>> {
     .map(cosmic::Action::App)
 }
 
+/// A labelled text field bound to a named `vpn.data` key.
+fn data_text_field(label: String, key: &'static str, value: String) -> Element<'static, Message> {
+    widget::settings::item(
+        label,
+        widget::text_input("", value)
+            .on_input(move |v| Message::EditorDataSet(key.to_string(), v))
+            .width(Length::Fixed(260.0)),
+    )
+    .into()
+}
+
+/// A labelled file field (text + browse button) bound to a named `vpn.data` key.
+fn data_file_field(label: String, key: &'static str, value: String) -> Element<'static, Message> {
+    widget::settings::item(
+        label,
+        widget::Row::with_children(vec![
+            widget::text_input("", value)
+                .on_input(move |v| Message::EditorDataSet(key.to_string(), v))
+                .width(Length::Fixed(220.0))
+                .into(),
+            cosmic::applet::menu_button(
+                widget::icon::from_name("document-open-symbolic")
+                    .size(16)
+                    .symbolic(true),
+            )
+            .width(Length::Shrink)
+            .on_press(Message::EditorBrowseDataKey(key.to_string()))
+            .into(),
+        ])
+        .spacing(4.0)
+        .align_y(Alignment::Center),
+    )
+    .into()
+}
+
+/// A labelled toggle bound to a `yes`/unset `vpn.data` key.
+fn data_toggle_field(label: String, key: &'static str, on: bool) -> Element<'static, Message> {
+    widget::settings::item(
+        label,
+        widget::toggler(on).on_toggle(move |v| {
+            let value = if v { "yes".to_string() } else { String::new() };
+            Message::EditorDataSet(key.to_string(), value)
+        }),
+    )
+    .into()
+}
+
+/// A labelled dropdown mapping display `labels` to `values` for a `vpn.data` key.
+fn data_choice_field(
+    label: String,
+    key: &'static str,
+    values: &'static [&'static str],
+    labels: Vec<String>,
+    current: String,
+) -> Element<'static, Message> {
+    let selected = values.iter().position(|v| *v == current).or(Some(0));
+    widget::settings::item(
+        label,
+        widget::dropdown(labels, selected, move |i| {
+            Message::EditorDataSet(key.to_string(), values[i].to_string())
+        })
+        .width(Length::Fixed(260.0)),
+    )
+    .into()
+}
+
+/// A dropdown for a closed-enum `vpn.data` key (values from [`crate::backend::enums`]),
+/// with a leading "Default" (unset) choice.
+fn data_enum_field(
+    label: String,
+    key: &'static str,
+    service_type: &str,
+    current: String,
+) -> Element<'static, Message> {
+    let options = crate::backend::enums::enum_values(service_type, key).unwrap_or(&[]);
+    let mut values: Vec<String> = vec![String::new()];
+    values.extend(options.iter().map(|s| (*s).to_string()));
+    let mut labels: Vec<String> = vec![fl!("oc-os-default")];
+    labels.extend(options.iter().map(|s| (*s).to_string()));
+    let selected = values.iter().position(|v| *v == current).or(Some(0));
+    widget::settings::item(
+        label,
+        widget::dropdown(labels, selected, move |i| {
+            Message::EditorDataSet(key.to_string(), values[i].clone())
+        })
+        .width(Length::Fixed(260.0)),
+    )
+    .into()
+}
+
 /// Open the file picker to choose a file for the named `vpn.data` `key`.
 fn pick_data_file_key(key: String) -> Task<cosmic::Action<Message>> {
     cosmic::task::future(async move {
@@ -1631,6 +1721,166 @@ impl AppModel {
                     fl!("oc-prevent-invalid"),
                     "prevent_invalid_cert",
                 ));
+        } else if service_type.ends_with("openvpn") {
+            // Structured OpenVPN form; the auth fields depend on the connection type.
+            let ct = editor.data_value("connection-type");
+            let ct = if ct.is_empty() { "tls".to_string() } else { ct };
+            const CT_VALUES: [&str; 4] = ["tls", "password", "password-tls", "static-key"];
+            let ct_labels = vec![
+                fl!("ovpn-ct-tls"),
+                fl!("ovpn-ct-password"),
+                fl!("ovpn-ct-password-tls"),
+                fl!("ovpn-ct-static-key"),
+            ];
+            column = column
+                .push(widget::text(fl!("oc-general")))
+                .push(data_text_field(
+                    fl!("detail-gateway"),
+                    "remote",
+                    editor.data_value("remote"),
+                ))
+                .push(data_choice_field(
+                    fl!("ovpn-conn-type"),
+                    "connection-type",
+                    &CT_VALUES,
+                    ct_labels,
+                    ct.clone(),
+                ));
+            if ct != "static-key" {
+                column = column.push(data_file_field(
+                    fl!("oc-ca-cert"),
+                    "ca",
+                    editor.data_value("ca"),
+                ));
+            }
+            if ct == "tls" || ct == "password-tls" {
+                column = column
+                    .push(data_file_field(
+                        fl!("oc-user-cert"),
+                        "cert",
+                        editor.data_value("cert"),
+                    ))
+                    .push(data_file_field(
+                        fl!("oc-private-key"),
+                        "key",
+                        editor.data_value("key"),
+                    ));
+            }
+            if ct == "password" || ct == "password-tls" {
+                column = column.push(data_text_field(
+                    fl!("ovpn-username"),
+                    "username",
+                    editor.data_value("username"),
+                ));
+            }
+            if ct == "static-key" {
+                const DIR_VALUES: [&str; 3] = ["", "0", "1"];
+                let dir_labels = vec![fl!("oc-os-default"), "0".to_string(), "1".to_string()];
+                column = column
+                    .push(data_file_field(
+                        fl!("ovpn-static-key"),
+                        "static-key",
+                        editor.data_value("static-key"),
+                    ))
+                    .push(data_choice_field(
+                        fl!("ovpn-key-dir"),
+                        "static-key-direction",
+                        &DIR_VALUES,
+                        dir_labels,
+                        editor.data_value("static-key-direction"),
+                    ))
+                    .push(data_text_field(
+                        fl!("ovpn-remote-ip"),
+                        "remote-ip",
+                        editor.data_value("remote-ip"),
+                    ))
+                    .push(data_text_field(
+                        fl!("ovpn-local-ip"),
+                        "local-ip",
+                        editor.data_value("local-ip"),
+                    ));
+            }
+            column = column
+                .push(widget::text(fl!("ovpn-advanced")))
+                .push(data_text_field(
+                    fl!("ovpn-port"),
+                    "port",
+                    editor.data_value("port"),
+                ))
+                .push(data_toggle_field(
+                    fl!("ovpn-tcp"),
+                    "proto-tcp",
+                    editor.data_value("proto-tcp") == "yes",
+                ))
+                .push(data_text_field(
+                    fl!("ovpn-cipher"),
+                    "cipher",
+                    editor.data_value("cipher"),
+                ))
+                .push(data_enum_field(
+                    fl!("ovpn-auth"),
+                    "auth",
+                    service_type,
+                    editor.data_value("auth"),
+                ));
+        } else if service_type.ends_with("vpnc") {
+            // Structured vpnc (Cisco IPsec) form.
+            column = column
+                .push(widget::text(fl!("oc-general")))
+                .push(data_text_field(
+                    fl!("detail-gateway"),
+                    "IPSec gateway",
+                    editor.data_value("IPSec gateway"),
+                ))
+                .push(data_text_field(
+                    fl!("vpnc-group"),
+                    "IPSec ID",
+                    editor.data_value("IPSec ID"),
+                ))
+                .push(data_text_field(
+                    fl!("ovpn-username"),
+                    "Xauth username",
+                    editor.data_value("Xauth username"),
+                ))
+                .push(data_text_field(
+                    fl!("vpnc-domain"),
+                    "Domain",
+                    editor.data_value("Domain"),
+                ))
+                .push(data_enum_field(
+                    fl!("vpnc-nat"),
+                    "NAT Traversal Mode",
+                    service_type,
+                    editor.data_value("NAT Traversal Mode"),
+                ))
+                .push(data_enum_field(
+                    fl!("vpnc-pfs"),
+                    "Perfect Forward Secrecy",
+                    service_type,
+                    editor.data_value("Perfect Forward Secrecy"),
+                ))
+                .push(data_enum_field(
+                    fl!("vpnc-dh"),
+                    "IKE DH Group",
+                    service_type,
+                    editor.data_value("IKE DH Group"),
+                ))
+                .push(data_enum_field(
+                    fl!("vpnc-vendor"),
+                    "Vendor",
+                    service_type,
+                    editor.data_value("Vendor"),
+                ))
+                .push(data_text_field(
+                    fl!("vpnc-app-version"),
+                    "Application Version",
+                    editor.data_value("Application Version"),
+                ))
+                .push(data_toggle_field(
+                    fl!("vpnc-single-des"),
+                    "Enable Single DES",
+                    editor.data_value("Enable Single DES") == "yes",
+                ));
         } else {
             column = column.push(widget::text(fl!("advanced-data")));
             for (index, (key, value)) in editor.data.iter().enumerate() {
@@ -2097,6 +2347,12 @@ impl cosmic::Application for AppModel {
                         && editor.data_value("protocol").is_empty()
                     {
                         editor.set_data("protocol", "anyconnect".to_string());
+                    }
+                    // Default OpenVPN's connection type to certificates (TLS).
+                    if service_type.ends_with("openvpn")
+                        && editor.data_value("connection-type").is_empty()
+                    {
+                        editor.set_data("connection-type", "tls".to_string());
                     }
                     editor.service_type = Some(service_type);
                     editor.type_name = type_name;

@@ -88,6 +88,33 @@ oc-user-cert = User Certificate
 oc-fsid = Use FSID for key passphrase
 oc-prevent-invalid = Prevent user from manually accepting invalid certificates
 
+# OpenVPN editor
+ovpn-conn-type = Connection type
+ovpn-ct-tls = Certificates (TLS)
+ovpn-ct-password = Password
+ovpn-ct-password-tls = Password with Certificates (TLS)
+ovpn-ct-static-key = Static Key
+ovpn-username = Username
+ovpn-static-key = Static Key
+ovpn-key-dir = Key Direction
+ovpn-remote-ip = Remote IP Address
+ovpn-local-ip = Local IP Address
+ovpn-advanced = Advanced
+ovpn-port = Gateway Port
+ovpn-tcp = Use a TCP connection
+ovpn-cipher = Cipher
+ovpn-auth = HMAC Authentication
+
+# vpnc (Cisco IPsec) editor
+vpnc-group = Group name
+vpnc-domain = Domain
+vpnc-nat = NAT traversal
+vpnc-pfs = Perfect Forward Secrecy
+vpnc-dh = DH Group
+vpnc-vendor = Vendor
+vpnc-app-version = Application version
+vpnc-single-des = Enable weak single DES encryption
+
 # Secret storage flags (NM secret-flags values)
 secret-store = Store password
 secret-ask = Always ask
