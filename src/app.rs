@@ -106,6 +106,25 @@ struct Editor {
     saving: bool,
 }
 
+impl Editor {
+    /// Current value of a `vpn.data` key (empty string when unset).
+    fn data_value(&self, key: &str) -> String {
+        self.data
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default()
+    }
+
+    /// Upsert a `vpn.data` key; an empty value removes it.
+    fn set_data(&mut self, key: &str, value: String) {
+        self.data.retain(|(k, _)| k != key);
+        if !value.is_empty() {
+            self.data.push((key.to_string(), value));
+        }
+    }
+}
+
 /// One WireGuard peer row in the editor.
 #[derive(Default, Clone)]
 struct WgPeerForm {
@@ -324,6 +343,12 @@ pub enum Message {
     EditorBrowseData(usize),
     /// Editor: a file was chosen for a data row.
     EditorDataPicked(usize, String),
+    /// Editor: set a `vpn.data` key by name (structured per-protocol forms).
+    EditorDataSet(String, String),
+    /// Editor: browse for a file to put in a named `vpn.data` key.
+    EditorBrowseDataKey(String),
+    /// Editor: a file was chosen for a named `vpn.data` key.
+    EditorDataKeyPicked(String, String),
     /// Editor: add a data row.
     EditorAddRow,
     /// Editor: remove a data row.
@@ -461,6 +486,21 @@ fn pick_data_file(index: usize) -> Task<cosmic::Action<Message>> {
         match file_chooser::open::Dialog::new().open_file().await {
             Ok(response) => match response.url().to_file_path() {
                 Ok(path) => Message::EditorDataPicked(index, path.display().to_string()),
+                Err(()) => Message::ImportDismissed,
+            },
+            Err(_) => Message::ImportDismissed,
+        }
+    })
+    .map(cosmic::Action::App)
+}
+
+/// Open the file picker to choose a file for the named `vpn.data` `key`.
+fn pick_data_file_key(key: String) -> Task<cosmic::Action<Message>> {
+    cosmic::task::future(async move {
+        use cosmic::dialog::file_chooser;
+        match file_chooser::open::Dialog::new().open_file().await {
+            Ok(response) => match response.url().to_file_path() {
+                Ok(path) => Message::EditorDataKeyPicked(key, path.display().to_string()),
                 Err(()) => Message::ImportDismissed,
             },
             Err(_) => Message::ImportDismissed,
@@ -1468,85 +1508,209 @@ impl AppModel {
                 .width(Length::Fixed(200.0)),
         ));
 
-        column = column.push(widget::text(fl!("advanced-data")));
         let service_type = editor.service_type.as_deref().unwrap_or_default();
-        for (index, (key, value)) in editor.data.iter().enumerate() {
-            // Secret-storage flag keys (`*-flags`) get a labelled dropdown mapping to
-            // NM's numeric flags; closed-enum keys get a raw-value dropdown; anything
-            // else (or an off-list value from an existing profile) stays free-form.
-            let value_element: Element<'_, Message> = if key.ends_with("-flags") {
-                // NMSettingSecretFlags is a bitfield: 0 = NONE (stored), 1 =
-                // AGENT_OWNED (also stored), 2 = NOT_SAVED (ask every time), 4 =
-                // NOT_REQUIRED. Map the three user choices to 0 / 2 / 4.
-                const FLAG_VALUES: [&str; 3] = ["0", "2", "4"];
-                let labels = [fl!("secret-store"), fl!("secret-ask"), fl!("secret-none")];
-                let selected = match value.trim() {
-                    "2" => Some(1),
-                    "4" => Some(2),
-                    _ => Some(0), // 0 (NONE) and 1 (AGENT_OWNED) are both "stored"
-                };
-                widget::dropdown(labels.to_vec(), selected, move |i| {
-                    Message::EditorDataValue(index, FLAG_VALUES[i].to_string())
-                })
-                .width(Length::Fill)
+        if service_type.ends_with("openconnect") {
+            // Structured OpenConnect form (mirrors plasma-nm's layout), bound to
+            // the plugin's vpn.data keys. Informed by plasma-nm's openconnect
+            // widget; see docs/ATTRIBUTION.md — no code copied.
+            let text_field = |label: String, key: &'static str| -> Element<'_, Message> {
+                widget::settings::item(
+                    label,
+                    widget::text_input("", editor.data_value(key))
+                        .on_input(move |v| Message::EditorDataSet(key.to_string(), v))
+                        .width(Length::Fixed(260.0)),
+                )
                 .into()
-            } else {
-                match crate::backend::enums::enum_values(service_type, key) {
-                    Some(options) if value.is_empty() || options.contains(&value.as_str()) => {
-                        let selected = options.iter().position(|o| *o == value.as_str());
-                        widget::dropdown(options, selected, move |i| {
-                            Message::EditorDataValue(index, options[i].to_string())
-                        })
-                        .width(Length::Fill)
-                        .into()
-                    }
-                    _ => widget::text_input(fl!("value-placeholder"), value.clone())
-                        .on_input(move |v| Message::EditorDataValue(index, v))
-                        .width(Length::Fill)
-                        .into(),
-                }
             };
-            let row = widget::Row::with_children(vec![
-                widget::text_input(fl!("key-placeholder"), key.clone())
-                    .on_input(move |k| Message::EditorDataKey(index, k))
-                    .width(Length::Fill)
-                    .into(),
-                value_element,
-                cosmic::applet::menu_button(
-                    widget::icon::from_name("document-open-symbolic")
-                        .size(16)
-                        .symbolic(true),
-                )
-                .width(Length::Shrink)
-                .on_press(Message::EditorBrowseData(index))
-                .into(),
-                cosmic::applet::menu_button(
-                    widget::icon::from_name("list-remove-symbolic")
-                        .size(16)
-                        .symbolic(true),
-                )
-                .width(Length::Shrink)
-                .on_press(Message::EditorRemoveRow(index))
-                .into(),
-            ])
-            .spacing(spacing.space_xxs)
-            .align_y(Alignment::Center);
-            column = column.push(row);
-        }
-        column = column.push(
-            cosmic::applet::menu_button(
-                widget::Row::with_children(vec![
-                    widget::icon::from_name("list-add-symbolic")
-                        .size(16)
-                        .symbolic(true)
+            let file_field = |label: String, key: &'static str| -> Element<'_, Message> {
+                widget::settings::item(
+                    label,
+                    widget::Row::with_children(vec![
+                        widget::text_input("", editor.data_value(key))
+                            .on_input(move |v| Message::EditorDataSet(key.to_string(), v))
+                            .width(Length::Fixed(220.0))
+                            .into(),
+                        cosmic::applet::menu_button(
+                            widget::icon::from_name("document-open-symbolic")
+                                .size(16)
+                                .symbolic(true),
+                        )
+                        .width(Length::Shrink)
+                        .on_press(Message::EditorBrowseDataKey(key.to_string()))
                         .into(),
-                    widget::text(fl!("add-field")).into(),
+                    ])
+                    .spacing(spacing.space_xxs)
+                    .align_y(Alignment::Center),
+                )
+                .into()
+            };
+            let toggle_field = |label: String, key: &'static str| -> Element<'_, Message> {
+                let on = editor.data_value(key) == "yes";
+                widget::settings::item(
+                    label,
+                    widget::toggler(on).on_toggle(move |v| {
+                        let value = if v { "yes".to_string() } else { String::new() };
+                        Message::EditorDataSet(key.to_string(), value)
+                    }),
+                )
+                .into()
+            };
+
+            // VPN Protocol dropdown (display label -> NM `protocol` value).
+            const PROTOCOL_VALUES: [&str; 7] =
+                ["anyconnect", "nc", "gp", "pulse", "f5", "fortinet", "array"];
+            let protocol_labels = vec![
+                "Cisco AnyConnect".to_string(),
+                "Juniper Network Connect".to_string(),
+                "PAN GlobalProtect".to_string(),
+                "Pulse Connect Secure".to_string(),
+                "F5 BIG-IP".to_string(),
+                "Fortinet Fortigate".to_string(),
+                "Array SSL VPN".to_string(),
+            ];
+            let protocol_cur = editor.data_value("protocol");
+            let protocol_selected = PROTOCOL_VALUES
+                .iter()
+                .position(|v| *v == protocol_cur)
+                .or(Some(0));
+            let protocol = widget::settings::item(
+                fl!("oc-protocol"),
+                widget::dropdown(protocol_labels, protocol_selected, move |i| {
+                    Message::EditorDataSet("protocol".to_string(), PROTOCOL_VALUES[i].to_string())
+                })
+                .width(Length::Fixed(260.0)),
+            );
+
+            // Reported OS dropdown ("" = default / unset).
+            const OS_VALUES: [&str; 7] = [
+                "",
+                "linux",
+                "linux-64",
+                "win",
+                "mac-intel",
+                "android",
+                "apple-ios",
+            ];
+            let os_labels = vec![
+                fl!("oc-os-default"),
+                "Linux".to_string(),
+                "Linux 64-bit".to_string(),
+                "Windows".to_string(),
+                "Mac Intel".to_string(),
+                "Android".to_string(),
+                "Apple iOS".to_string(),
+            ];
+            let os_cur = editor.data_value("reported_os");
+            let os_selected = OS_VALUES.iter().position(|v| *v == os_cur).or(Some(0));
+            let reported_os = widget::settings::item(
+                fl!("oc-reported-os"),
+                widget::dropdown(os_labels, os_selected, move |i| {
+                    Message::EditorDataSet("reported_os".to_string(), OS_VALUES[i].to_string())
+                })
+                .width(Length::Fixed(260.0)),
+            );
+
+            column = column
+                .push(widget::text(fl!("oc-general")))
+                .push(protocol)
+                .push(text_field(fl!("detail-gateway"), "gateway"))
+                .push(file_field(fl!("oc-ca-cert"), "cacert"))
+                .push(text_field(fl!("oc-proxy"), "proxy"))
+                .push(text_field(fl!("oc-user-agent"), "useragent"))
+                .push(text_field(fl!("oc-reported-version"), "version_string"))
+                .push(reported_os)
+                .push(toggle_field(fl!("oc-csd-trojan"), "enable_csd_trojan"))
+                .push(file_field(fl!("oc-csd-wrapper"), "csd_wrapper"))
+                .push(widget::text(fl!("oc-cert-auth")))
+                .push(file_field(fl!("oc-machine-cert"), "mcacert"))
+                .push(file_field(fl!("oc-private-key"), "mcakey"))
+                .push(file_field(fl!("oc-user-cert"), "usercert"))
+                .push(file_field(fl!("oc-private-key"), "userkey"))
+                .push(toggle_field(fl!("oc-fsid"), "pem_passphrase_fsid"))
+                .push(toggle_field(
+                    fl!("oc-prevent-invalid"),
+                    "prevent_invalid_cert",
+                ));
+        } else {
+            column = column.push(widget::text(fl!("advanced-data")));
+            for (index, (key, value)) in editor.data.iter().enumerate() {
+                // Secret-storage flag keys (`*-flags`) get a labelled dropdown mapping to
+                // NM's numeric flags; closed-enum keys get a raw-value dropdown; anything
+                // else (or an off-list value from an existing profile) stays free-form.
+                let value_element: Element<'_, Message> = if key.ends_with("-flags") {
+                    // NMSettingSecretFlags is a bitfield: 0 = NONE (stored), 1 =
+                    // AGENT_OWNED (also stored), 2 = NOT_SAVED (ask every time), 4 =
+                    // NOT_REQUIRED. Map the three user choices to 0 / 2 / 4.
+                    const FLAG_VALUES: [&str; 3] = ["0", "2", "4"];
+                    let labels = [fl!("secret-store"), fl!("secret-ask"), fl!("secret-none")];
+                    let selected = match value.trim() {
+                        "2" => Some(1),
+                        "4" => Some(2),
+                        _ => Some(0), // 0 (NONE) and 1 (AGENT_OWNED) are both "stored"
+                    };
+                    widget::dropdown(labels.to_vec(), selected, move |i| {
+                        Message::EditorDataValue(index, FLAG_VALUES[i].to_string())
+                    })
+                    .width(Length::Fill)
+                    .into()
+                } else {
+                    match crate::backend::enums::enum_values(service_type, key) {
+                        Some(options) if value.is_empty() || options.contains(&value.as_str()) => {
+                            let selected = options.iter().position(|o| *o == value.as_str());
+                            widget::dropdown(options, selected, move |i| {
+                                Message::EditorDataValue(index, options[i].to_string())
+                            })
+                            .width(Length::Fill)
+                            .into()
+                        }
+                        _ => widget::text_input(fl!("value-placeholder"), value.clone())
+                            .on_input(move |v| Message::EditorDataValue(index, v))
+                            .width(Length::Fill)
+                            .into(),
+                    }
+                };
+                let row = widget::Row::with_children(vec![
+                    widget::text_input(fl!("key-placeholder"), key.clone())
+                        .on_input(move |k| Message::EditorDataKey(index, k))
+                        .width(Length::Fill)
+                        .into(),
+                    value_element,
+                    cosmic::applet::menu_button(
+                        widget::icon::from_name("document-open-symbolic")
+                            .size(16)
+                            .symbolic(true),
+                    )
+                    .width(Length::Shrink)
+                    .on_press(Message::EditorBrowseData(index))
+                    .into(),
+                    cosmic::applet::menu_button(
+                        widget::icon::from_name("list-remove-symbolic")
+                            .size(16)
+                            .symbolic(true),
+                    )
+                    .width(Length::Shrink)
+                    .on_press(Message::EditorRemoveRow(index))
+                    .into(),
                 ])
-                .align_y(Alignment::Center)
-                .spacing(spacing.space_s),
-            )
-            .on_press(Message::EditorAddRow),
-        );
+                .spacing(spacing.space_xxs)
+                .align_y(Alignment::Center);
+                column = column.push(row);
+            }
+            column = column.push(
+                cosmic::applet::menu_button(
+                    widget::Row::with_children(vec![
+                        widget::icon::from_name("list-add-symbolic")
+                            .size(16)
+                            .symbolic(true)
+                            .into(),
+                        widget::text(fl!("add-field")).into(),
+                    ])
+                    .align_y(Alignment::Center)
+                    .spacing(spacing.space_s),
+                )
+                .on_press(Message::EditorAddRow),
+            );
+        }
 
         let cancel = widget::button::standard(fl!("cancel")).on_press(Message::EditorCancel);
         let can_save = !editor.name.trim().is_empty() && !editor.saving;
@@ -1927,6 +2091,13 @@ impl cosmic::Application for AppModel {
             },
             Message::EditorSelectType(service_type, type_name) => {
                 if let Some(editor) = &mut self.editor {
+                    // Default OpenConnect's protocol so the dropdown starts on
+                    // Cisco AnyConnect for a new connection.
+                    if service_type.ends_with("openconnect")
+                        && editor.data_value("protocol").is_empty()
+                    {
+                        editor.set_data("protocol", "anyconnect".to_string());
+                    }
                     editor.service_type = Some(service_type);
                     editor.type_name = type_name;
                 }
@@ -2095,6 +2266,19 @@ impl cosmic::Application for AppModel {
                     && let Some(row) = editor.data.get_mut(index)
                 {
                     row.1 = path;
+                }
+            }
+            Message::EditorDataSet(key, value) => {
+                if let Some(editor) = &mut self.editor {
+                    editor.set_data(&key, value);
+                }
+            }
+            Message::EditorBrowseDataKey(key) => {
+                return pick_data_file_key(key);
+            }
+            Message::EditorDataKeyPicked(key, path) => {
+                if let Some(editor) = &mut self.editor {
+                    editor.set_data(&key, path);
                 }
             }
             Message::EditorAddRow => {

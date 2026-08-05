@@ -70,6 +70,24 @@ key-placeholder = Key
 value-placeholder = Value
 add-field = Add field
 
+# OpenConnect editor
+oc-general = General
+oc-cert-auth = Certificate Authentication
+oc-protocol = VPN Protocol
+oc-ca-cert = CA Certificate
+oc-proxy = Proxy
+oc-user-agent = User Agent
+oc-reported-version = Reported Version
+oc-reported-os = Reported OS
+oc-os-default = Default
+oc-csd-trojan = Allow Cisco Secure Desktop trojan
+oc-csd-wrapper = CSD Wrapper Script
+oc-machine-cert = Machine Certificate
+oc-private-key = Private Key
+oc-user-cert = User Certificate
+oc-fsid = Use FSID for key passphrase
+oc-prevent-invalid = Prevent user from manually accepting invalid certificates
+
 # Secret storage flags (NM secret-flags values)
 secret-store = Store password
 secret-ask = Always ask
