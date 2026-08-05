@@ -1,0 +1,26 @@
+.cargo/
+*.pdb
+**/*.rs.bk
+debug/
+target/
+vendor/
+vendor.tar
+debian/*
+!debian/changelog
+!debian/control
+!debian/copyright
+!debian/install
+!debian/rules
+!debian/source
+CLAUDE.md
+
+# Nix build symlink
+result
+result-*
+
+# Local editor / tooling config
+.zed/
+.claude/
+
+# Internal design notes — kept local, not published
+docs/

@@ -1,0 +1,89 @@
+app-title = منوی VPN دسکتاپ COSMIC
+
+# Popup states
+no-vpn-connections = هیچ اتصال VPN وجود ندارد
+load-error = بارگیری اتصال‌های VPN ممکن نشد: { $error }
+
+# Connection status
+vpn-status-connected = متصل
+vpn-status-connecting = در حال اتصال…
+vpn-status-disconnecting = در حال قطع اتصال…
+vpn-status-disconnected = قطع شده
+vpn-status-unknown = نامشخص
+
+# Connection detail panel
+detail-type = نوع
+detail-gateway = دروازه
+detail-ipv4 = IPv4
+detail-ipv6 = IPv6
+dns-servers = کارساز‌های DNS
+detail-duration = مدت اتصال
+autoconnect = اتصال خودکار
+
+# Forget / delete
+forget = فراموش کردن
+confirm-forget = این اتصال فراموش شود؟
+delete = حذف
+cancel = لغو
+
+# Secret prompt
+secret-prompt = اطلاعات ورود برای { $name } را وارد کنید
+connect = اتصال
+
+# Import
+import = درون‌ریزی…
+
+# Create / edit
+add-vpn = افزودن VPN
+edit = ویرایش…
+select-vpn-type = نوع VPN را انتخاب کنید
+new-vpn = ‏VPN جدید { $kind }
+edit-vpn = ویرایش ‏VPN { $kind }
+name-placeholder = نام
+advanced-data = پیشرفته (داده)
+key-placeholder = کلید
+value-placeholder = مقدار
+add-field = افزودن فیلد
+save = ذخیره
+
+# WireGuard editor
+wg-private-key = کلید خصوصی
+wg-address = نشانی
+wg-peer = همتا
+wg-peer-key = کلید عمومی
+wg-peer-endpoint = نقطهٔ پایانی
+wg-allowed-ips = ‏IPهای مجاز
+
+# WireGuard / secrets (added)
+wg-mtu = MTU
+wg-peer-n = همتای { $index }
+wg-preshared-key = کلید پیش‌اشتراکی
+wg-keepalive = زنده‌نگه‌داری پایدار (ثانیه)
+wg-add-peer = افزودن همتا
+remove = حذف
+secret-store = ذخیره گذرواژه
+secret-ask = همیشه بپرس
+secret-none = لازم نیست
+
+# Sync (backfilled)
+notify-connected = VPN متصل شد
+notify-disconnected = VPN قطع شد
+notify-failed = اتصال VPN ناموفق بود
+reason-ip-config = پیکربندی IP نامعتبر
+reason-timeout = مهلت اتصال به پایان رسید
+reason-service-failed = سرویس VPN شروع نشد
+reason-no-secrets = گذرواژه‌ای ارائه نشد
+reason-login-failed = احراز هویت ناموفق بود
+detail-dns = DNS
+detail-received = دریافت‌شده
+detail-sent = ارسال‌شده
+detail-last-used = آخرین استفاده
+duplicate = تکثیر
+priority = اولویت اتصال خودکار
+metered = محدودشده
+metered-auto = خودکار
+metered-yes = بله
+metered-no = خیر
+zone = ناحیهٔ دیوارهٔ آتش
+split-tunnel = فقط برای شبکهٔ خودش استفاده شود
+dns-search = دامنه‌های جستجوی DNS

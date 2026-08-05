@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+<!-- Artwork: a shield with a keyhole, representing a secured VPN tunnel, in the
+     COSMIC/Pop brand teal. -->
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="vpn-shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5cc9d6"/>
+      <stop offset="1" stop-color="#48b9c7"/>
+    </linearGradient>
+  </defs>
+  <path d="M64 14 L106 30 V62 C106 88 92 106 64 116 C36 106 22 88 22 62 V30 Z"
+        fill="url(#vpn-shield)" stroke="#2f8f9c" stroke-width="3"
+        stroke-linejoin="round"/>
+  <circle cx="64" cy="52" r="10" fill="#ffffff"/>
+  <polygon points="59,56 69,56 72,84 56,84" fill="#ffffff"/>
+</svg>
