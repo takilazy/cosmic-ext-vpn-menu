@@ -13,8 +13,6 @@
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-      appId = "com.github.takilazy.CosmicExtVpnMenu";
-
       # Libraries libcosmic (winit/wayland/wgpu) dlopens or links at runtime.
       runtimeLibs =
         pkgs: with pkgs; [
@@ -29,51 +27,16 @@
     in
     {
       packages = forAllSystems (pkgs: rec {
-        cosmic-ext-vpn-menu = pkgs.rustPlatform.buildRustPackage {
-          pname = "cosmic-ext-vpn-menu";
-          version = "0.1.0";
-          src = ./.;
-
-          # libcosmic and friends come from git; let Nix fetch them per Cargo.lock's
-          # recorded revisions (no per-dependency hashes to maintain).
-          cargoLock = {
-            lockFile = ./Cargo.lock;
-            allowBuiltinFetchGit = true;
-          };
-
-          nativeBuildInputs = with pkgs; [
-            pkg-config
-            just
-          ];
-          buildInputs = runtimeLibs pkgs;
-
-          # Install the desktop entry, metainfo, and icon alongside the binary.
-          postInstall = ''
-            install -Dm0644 resources/app.desktop \
-              "$out/share/applications/${appId}.desktop"
-            install -Dm0644 resources/app.metainfo.xml \
-              "$out/share/metainfo/${appId}.metainfo.xml"
-            install -Dm0644 resources/icon.svg \
-              "$out/share/icons/hicolor/scalable/apps/${appId}.svg"
-          '';
-
-          # Ensure the dlopen'd wayland/GL/Vulkan libraries resolve at runtime.
-          postFixup = ''
-            patchelf --add-rpath "${pkgs.lib.makeLibraryPath (runtimeLibs pkgs)}" \
-              "$out/bin/cosmic-ext-vpn-menu"
-          '';
-
-          meta = with pkgs.lib; {
-            description = "VPN management applet for the COSMIC desktop";
-            homepage = "https://github.com/takilazy/cosmic-ext-vpn-menu";
-            license = licenses.mpl20;
-            mainProgram = "cosmic-ext-vpn-menu";
-            platforms = platforms.linux;
-          };
-        };
-
+        # The derivation is defined once in ./nix/package.nix and shared with the
+        # non-flakes default.nix.
+        cosmic-ext-vpn-menu = pkgs.callPackage ./nix/package.nix { };
         default = cosmic-ext-vpn-menu;
       });
+
+      # Add `cosmic-ext-vpn-menu` to nixpkgs, e.g. via `nixpkgs.overlays`.
+      overlays.default = _final: prev: {
+        cosmic-ext-vpn-menu = prev.callPackage ./nix/package.nix { };
+      };
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {

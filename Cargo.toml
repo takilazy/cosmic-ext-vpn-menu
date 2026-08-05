@@ -9,7 +9,7 @@ repository = "https://github.com/takilazy/cosmic-ext-vpn-menu"
 [dependencies]
 futures = "0.3"
 i18n-embed-fl = "0.10"
-# NetworkManager D-Bus bindings (MIT-licensed; MPL-compatible). See docs/RESEARCH.md.
+# NetworkManager D-Bus bindings (MIT-licensed; MPL-compatible).
 nmrs = "3.4.2"
 rust-embed = "8.11"
 tokio = { version = "1.52.0", features = ["full"] }
@@ -46,3 +46,31 @@ features = [
 # libcosmic = { path = "../libcosmic" }
 # cosmic-config = { path = "../libcosmic/cosmic-config" }
 # cosmic-theme = { path = "../libcosmic/cosmic-theme" }
+
+# --- Packaging (used by the release CI to build .deb / .rpm) ---
+# Assets install the binary plus the applet's desktop entry, metainfo, and icon
+# under the reverse-DNS app ID, matching the Nix package and `just install`.
+
+[package.metadata.deb]
+maintainer = "A I <taki.lazy@gmail.com>"
+section = "net"
+priority = "optional"
+depends = "network-manager"
+extended-description = "A VPN-only COSMIC panel applet for managing NetworkManager VPN and WireGuard connections."
+assets = [
+    ["target/release/cosmic-ext-vpn-menu", "usr/bin/", "755"],
+    ["resources/app.desktop", "usr/share/applications/com.github.takilazy.CosmicExtVpnMenu.desktop", "644"],
+    ["resources/app.metainfo.xml", "usr/share/metainfo/com.github.takilazy.CosmicExtVpnMenu.metainfo.xml", "644"],
+    ["resources/icon.svg", "usr/share/icons/hicolor/scalable/apps/com.github.takilazy.CosmicExtVpnMenu.svg", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/cosmic-ext-vpn-menu", dest = "/usr/bin/cosmic-ext-vpn-menu", mode = "755" },
+    { source = "resources/app.desktop", dest = "/usr/share/applications/com.github.takilazy.CosmicExtVpnMenu.desktop", mode = "644" },
+    { source = "resources/app.metainfo.xml", dest = "/usr/share/metainfo/com.github.takilazy.CosmicExtVpnMenu.metainfo.xml", mode = "644" },
+    { source = "resources/icon.svg", dest = "/usr/share/icons/hicolor/scalable/apps/com.github.takilazy.CosmicExtVpnMenu.svg", mode = "644" },
+]
+
+[package.metadata.generate-rpm.requires]
+NetworkManager = "*"

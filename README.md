@@ -38,6 +38,74 @@ implements no Wi-Fi, wired, cellular, or hotspot features — those stay with th
   …). WireGuard needs no plugin.
 - A COSMIC session to host the applet.
 
+## Install
+
+### Prebuilt packages (Debian/Ubuntu, Fedora/RHEL)
+
+Each [GitHub Release](https://github.com/takilazy/cosmic-ext-vpn-menu/releases)
+ships a `.deb` and an `.rpm` (built by CI):
+
+```sh
+sudo apt install ./cosmic-ext-vpn-menu_*.deb      # Debian / Ubuntu
+sudo dnf install ./cosmic-ext-vpn-menu-*.rpm       # Fedora / RHEL
+```
+
+### NixOS — with flakes
+
+Add this repo as an input and install the package. In your system flake:
+
+```nix
+{
+  inputs.cosmic-ext-vpn-menu.url = "github:takilazy/cosmic-ext-vpn-menu";
+
+  # then, in your nixosConfigurations module arguments, pull the input in and:
+  # environment.systemPackages = [
+  #   inputs.cosmic-ext-vpn-menu.packages.${pkgs.system}.default
+  # ];
+}
+```
+
+Or apply the overlay so it appears as `pkgs.cosmic-ext-vpn-menu`:
+
+```nix
+nixpkgs.overlays = [ inputs.cosmic-ext-vpn-menu.overlays.default ];
+environment.systemPackages = [ pkgs.cosmic-ext-vpn-menu ];
+```
+
+Try it without installing:
+
+```sh
+nix run github:takilazy/cosmic-ext-vpn-menu
+```
+
+### NixOS — without flakes
+
+Fetch and build the package with plain `nix`. In `configuration.nix`:
+
+```nix
+{ pkgs, ... }:
+let
+  cosmic-ext-vpn-menu = import (builtins.fetchTarball {
+    url = "https://github.com/takilazy/cosmic-ext-vpn-menu/archive/main.tar.gz";
+  }) { inherit pkgs; };
+in
+{
+  environment.systemPackages = [ cosmic-ext-vpn-menu ];
+}
+```
+
+(Pin a specific commit by using `.../archive/<commit>.tar.gz` and adding its
+`sha256`.) Or build it locally:
+
+```sh
+git clone https://github.com/takilazy/cosmic-ext-vpn-menu
+cd cosmic-ext-vpn-menu
+nix-build              # → ./result/bin/cosmic-ext-vpn-menu
+```
+
+After installing by any method, add **COSMIC VPN Menu** to the panel via COSMIC
+Settings → Desktop → Panel → applets.
+
 ## Build & run
 
 This project targets NixOS; both a `flake.nix` and a `shell.nix` are provided.
