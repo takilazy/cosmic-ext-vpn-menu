@@ -5,7 +5,6 @@
   lib,
   rustPlatform,
   pkg-config,
-  just,
   wayland,
   libxkbcommon,
   vulkan-loader,
@@ -50,9 +49,13 @@ rustPlatform.buildRustPackage {
     allowBuiltinFetchGit = true;
   };
 
+  # NB: do NOT put `just` here. The nixpkgs `just` package ships setup-hooks
+  # that hijack build/check/install to `just build|test|install`, and the
+  # justfile's `install` targets /usr — which fails in the sandbox. We build
+  # with cargo (buildRustPackage's default phases) and install resources in
+  # postInstall with coreutils `install`.
   nativeBuildInputs = [
     pkg-config
-    just
   ];
   buildInputs = runtimeLibs;
 
